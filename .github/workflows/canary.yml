@@ -3,17 +3,23 @@ name: canary
 # Corax end-to-end canary (corax-review docs/runbook.md#canary). Copy this file
 # to .github/workflows/canary.yml on the default branch of the public canary
 # repo. Every 3 h it pushes a one-line change to the `canary` branch, whose
-# open PR (opened by a person, not a bot) Corax re-reviews on push. The
-# corax-review monitor (external job) reads that PR and alerts `canary` when
-# the pushed commit gets no Corax review in time. GitHub-hosted runner and the
-# repo's own token: no secret and nothing on our infrastructure.
+# open PR Corax re-reviews on push. The corax-review monitor (external job)
+# reads that PR and alerts `canary` when the pushed commit gets no Corax
+# review in time. GitHub-hosted runner: nothing on our infrastructure.
+#
+# The push must come from a person admitted to Corax, not from
+# github-actions[bot]: the bot ignores bot senders unless the gateway is
+# enforced, and the closed beta admits the sender's user id only. Secret
+# CANARY_PUSH_TOKEN is a fine-grained token of that person limited to this
+# repository with Contents read and write. Without it the job fails, and the
+# monitor reports the canary as stopped.
 on:
   schedule:
     - cron: '17 */3 * * *'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: canary
@@ -24,15 +30,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Require the push token
+        env:
+          TOKEN: ${{ secrets.CANARY_PUSH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo '::error::secret CANARY_PUSH_TOKEN is not set (see corax-review docs/runbook.md#canary)'
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           ref: canary
+          token: ${{ secrets.CANARY_PUSH_TOKEN }}
       - name: Push one changed line to the canary PR
         run: |
           stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           printf 'Last canary push: %s\n' "$stamp" > stamp.txt
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name 'corax-canary'
+          git config user.email 'corax-canary@users.noreply.github.com'
           git add stamp.txt
           git commit -m "chore: canary $stamp"
           git push origin HEAD:canary
