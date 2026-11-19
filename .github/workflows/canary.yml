@@ -1,0 +1,38 @@
+name: canary
+
+# Corax end-to-end canary (corax-review docs/runbook.md#canary). Copy this file
+# to .github/workflows/canary.yml on the default branch of the public canary
+# repo. Every 3 h it pushes a one-line change to the `canary` branch, whose
+# open PR (opened by a person, not a bot) Corax re-reviews on push. The
+# corax-review monitor (external job) reads that PR and alerts `canary` when
+# the pushed commit gets no Corax review in time. GitHub-hosted runner and the
+# repo's own token: no secret and nothing on our infrastructure.
+on:
+  schedule:
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: canary
+  cancel-in-progress: false
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: canary
+      - name: Push one changed line to the canary PR
+        run: |
+          stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          printf 'Last canary push: %s\n' "$stamp" > stamp.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add stamp.txt
+          git commit -m "chore: canary $stamp"
+          git push origin HEAD:canary
